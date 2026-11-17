@@ -26,6 +26,23 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            if (providers.environmentVariable("ANDROID_KEYSTORE_FILE").orNull != null) {
+                storeFile = file(checkNotNull(providers.environmentVariable("ANDROID_KEYSTORE_FILE").orNull!!))
+                storePassword = checkNotNull(providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull!!)
+                keyAlias = checkNotNull(providers.environmentVariable("ANDROID_KEY_ALIAS").orNull!!)
+                keyPassword = checkNotNull(providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull!!)
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
     applicationVariants.all {
         this.outputs
             .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
