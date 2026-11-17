@@ -270,7 +270,7 @@ private fun SettingsScreen(
                 val result = withContext(Dispatchers.IO) {
                     try {
                         api.testConnection(InstanceConfig(baseUrl, apiToken.trim()))
-                        Pair("Connection successful. The admin API token was accepted.", false)
+                        Pair("Connection successful.", false)
                     } catch (error: ApiException) {
                         Pair(error.message ?: "Connection test failed.", true)
                     }
