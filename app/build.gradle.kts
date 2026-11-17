@@ -1,7 +1,15 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_21)
+    }
 }
 
 android {
@@ -12,10 +20,22 @@ android {
         applicationId = "fr.strangeplanet.tubearchivist.share"
         minSdk = 30
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = providers.gradleProperty("versionCode").getOrElse("1").toInt()
+        versionName = providers.gradleProperty("versionName").getOrElse("1.0")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    applicationVariants.all {
+        this.outputs
+            .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
+            .forEach { output ->
+                if (this@all.buildType.name == "release") {
+                    output.outputFileName = "TubeArchivistShare-${this@all.versionName}.apk"
+                } else {
+                    output.outputFileName = "TubeArchivistShare-debug.apk"
+                }
+            }
     }
 
     compileOptions {
