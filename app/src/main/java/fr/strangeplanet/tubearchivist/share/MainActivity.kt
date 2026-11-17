@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,6 +40,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.Pair;
 import java.io.IOException
 import java.security.GeneralSecurityException
 
@@ -121,10 +121,6 @@ private fun TubeArchivistShareApp(
                                 showSettings = false
                             },
                             onCancel = { showSettings = false },
-                            onRemoved = {
-                                configRead = ConfigReadResult.Empty
-                                showSettings = true
-                            },
                         )
                     } else if (incomingShare != null) {
                         ShareScreen(
@@ -134,7 +130,10 @@ private fun TubeArchivistShareApp(
                             onDone = onShareFinished,
                         )
                     } else {
-                        HomeScreen(onSettings = { showSettings = true })
+                        HomeScreen(
+                            config = currentConfig.config,
+                            onSettings = { showSettings = true }
+                        )
                     }
                 }
                 is ConfigReadResult.Empty -> SettingsScreen(
@@ -157,20 +156,6 @@ private fun TubeArchivistShareApp(
                         showSettings = false
                     },
                     onCancel = null,
-                    onClearUnreadable = {
-                        try {
-                            store.clear()
-                            configRead = ConfigReadResult.Empty
-                        } catch (error: GeneralSecurityException) {
-                            configRead = ConfigReadResult.Failed(
-                                error.message ?: "Could not clear the saved settings."
-                            )
-                        } catch (error: IOException) {
-                            configRead = ConfigReadResult.Failed(
-                                error.message ?: "Could not clear the saved settings."
-                            )
-                        }
-                    },
                 )
             }
         }
@@ -178,7 +163,10 @@ private fun TubeArchivistShareApp(
 }
 
 @Composable
-private fun HomeScreen(onSettings: () -> Unit) {
+private fun HomeScreen(
+    config: InstanceConfig,
+    onSettings: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -188,6 +176,8 @@ private fun HomeScreen(onSettings: () -> Unit) {
         Text("TubeArchivist Share", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(12.dp))
         Text("Ready to receive a YouTube link from the Android share menu.")
+        Spacer(Modifier.height(24.dp))
+        Text("Connected to " + config.baseUrl)
         Spacer(Modifier.height(24.dp))
         Button(onClick = onSettings) {
             Text("Instance settings")
@@ -203,14 +193,11 @@ private fun SettingsScreen(
     onSaved: (InstanceConfig) -> Unit,
     onCancel: (() -> Unit)?,
     storageError: String? = null,
-    onClearUnreadable: (() -> Unit)? = null,
-    onRemoved: (() -> Unit)? = null,
 ) {
     var baseUrl by remember(initialConfig) { mutableStateOf(initialConfig?.baseUrl.orEmpty()) }
     var apiToken by remember(initialConfig) { mutableStateOf(initialConfig?.apiToken.orEmpty()) }
-    var status by remember { mutableStateOf<String?>(storageError) }
+    var status by remember { mutableStateOf<Pair<String, Boolean>?>(if (storageError != null) Pair(storageError, true) else null) }
     var busy by remember { mutableStateOf(false) }
-    var confirmRemoval by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -223,7 +210,6 @@ private fun SettingsScreen(
             if (initialConfig == null) "Connect to TubeArchivist" else "Instance settings",
             style = MaterialTheme.typography.headlineSmall,
         )
-        Text("Use the instance base URL and an API token for a TubeArchivist admin account.")
         OutlinedTextField(
             value = baseUrl,
             onValueChange = { baseUrl = it; status = null },
@@ -233,19 +219,21 @@ private fun SettingsScreen(
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
         )
-        if (baseUrl.trimStart().startsWith("http://", ignoreCase = true)) {
-            WarningCard("HTTP is not encrypted. Prefer HTTPS, especially outside a trusted local network.")
-        }
         OutlinedTextField(
             value = apiToken,
             onValueChange = { apiToken = it; status = null },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Admin API token") },
+            label = { Text("API key") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
         )
-        storageError?.let { WarningCard(it) }
-        status?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        status?.let {
+            if (it.second) {
+                WarningCard(it.first)
+            } else {
+                SuccessCard(it.first)
+            }
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
@@ -266,11 +254,11 @@ private fun SettingsScreen(
                         store.write(config)
                         onSaved(config)
                     } catch (error: ApiException) {
-                        status = error.message ?: "Enter valid instance settings."
+                        status = Pair(error.message ?: "Enter valid instance settings.", true)
                     } catch (error: GeneralSecurityException) {
-                        status = error.message ?: "Could not encrypt the saved credentials."
+                        status = Pair(error.message ?: "Could not encrypt the saved credentials.", true)
                     } catch (error: IOException) {
-                        status = error.message ?: "Could not save the instance settings."
+                        status = Pair(error.message ?: "Could not save the instance settings.", true)
                     }
                 },
             ) {
@@ -282,18 +270,13 @@ private fun SettingsScreen(
                 val result = withContext(Dispatchers.IO) {
                     try {
                         api.testConnection(InstanceConfig(baseUrl, apiToken.trim()))
-                        "Connection successful. The admin API token was accepted."
+                        Pair("Connection successful. The admin API token was accepted.", false)
                     } catch (error: ApiException) {
-                        error.message ?: "Connection test failed."
+                        Pair(error.message ?: "Connection test failed.", true)
                     }
                 }
                 status = result
                 busy = false
-            }
-        }
-        onClearUnreadable?.let { clear ->
-            OutlinedButton(onClick = clear) {
-                Text("Clear unreadable saved settings")
             }
         }
         onCancel?.let { cancel ->
@@ -301,43 +284,6 @@ private fun SettingsScreen(
                 Text("Cancel")
             }
         }
-        onRemoved?.let {
-            OutlinedButton(onClick = { confirmRemoval = true }) {
-                Text("Remove instance")
-            }
-        }
-    }
-
-    if (confirmRemoval) {
-        AlertDialog(
-            onDismissRequest = { confirmRemoval = false },
-            title = { Text("Remove instance?") },
-            text = { Text("The saved server URL and API token will be removed from this device.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        try {
-                            store.clear()
-                            confirmRemoval = false
-                            onRemoved?.invoke()
-                        } catch (error: GeneralSecurityException) {
-                            status = error.message ?: "Could not remove the instance settings."
-                            confirmRemoval = false
-                        } catch (error: IOException) {
-                            status = error.message ?: "Could not remove the instance settings."
-                            confirmRemoval = false
-                        }
-                    }
-                ) {
-                    Text("Remove")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmRemoval = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
     }
 }
 
@@ -406,22 +352,20 @@ private fun ShareScreen(
                 }
             }
             ShareState.Accepted -> {
-                Text("Queued for processing.")
-                Text(
-                    "TubeArchivist accepted the asynchronous request. It may still skip or fail items while processing."
-                )
+                SuccessCard("Queued for processing.")
+                Text("The item was successfully sent to TubeArchivist.")
                 Button(onClick = onDone) {
                     Text("Done")
                 }
             }
             is ShareState.Failed -> {
-                Text(currentState.message, color = MaterialTheme.colorScheme.error)
+                WarningCard(currentState.message)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { retryCount++ }) {
                         Text("Retry")
                     }
                     OutlinedButton(onClick = onDone) {
-                        Text("Done")
+                        Text("Cancel")
                     }
                 }
             }
@@ -436,6 +380,17 @@ private fun WarningCard(message: String) {
             message,
             modifier = Modifier.padding(16.dp),
             color = MaterialTheme.colorScheme.error,
+        )
+    }
+}
+
+@Composable
+private fun SuccessCard(message: String) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            message,
+            modifier = Modifier.padding(16.dp),
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }
