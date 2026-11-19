@@ -10,6 +10,7 @@ import java.net.URL
 data class InstanceConfig(
     val baseUrl: String,
     val apiToken: String,
+    var autoDownload: Boolean,
 )
 
 class TubeArchivistApi {
@@ -21,20 +22,21 @@ class TubeArchivistApi {
     }
 
     fun testConnection(config: InstanceConfig) {
-        request(config, method = "GET")
+        request(config, method = "GET", url = "download/")
     }
 
     fun enqueue(config: InstanceConfig, link: YouTubeLink) {
         val jsonUrl = link.url.jsonString()
         val body = """{"data":[{"youtube_id":$jsonUrl,"status":"pending"}]}"""
-        request(config, method = "POST", body = body)
+        val url = "download/?autostart=${config.autoDownload.toString()}";
+        request(config, method = "POST", url = url, body = body)
     }
 
-    private fun request(config: InstanceConfig, method: String, body: String? = null) {
+    private fun request(config: InstanceConfig, method: String, url: String, body: String? = null) {
         validateConfig(config)
         val baseUrl = normalizeBaseUrl(config.baseUrl)
         val connection = try {
-            URL("$baseUrl/api/download/").openConnection() as HttpURLConnection
+            URL("$baseUrl/api/$url").openConnection() as HttpURLConnection
         } catch (error: IOException) {
             throw ApiException("Could not connect to the TubeArchivist instance: ${error.message ?: "invalid server URL"}")
         }

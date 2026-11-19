@@ -2,7 +2,7 @@
 
 Native Android share target for sending one YouTube URL to a TubeArchivist instance. Requires Android 11 (API 30) or newer.
 
-<img src="./docs/screenshots/home.png" alt="home" style="width: 33%; margin-right: 0.5%;"><img src="./docs/screenshots/settings.png" alt="settings" style="width: 33%; margin-right: 0.5%;"><img src="./docs/screenshots/share.png" alt="share" style="width: 33%;">
+<img src="./docs/screenshots/home.png" alt="home" style="width: 33%;"> <img src="./docs/screenshots/settings.png" alt="settings" style="width: 33%;"> <img src="./docs/screenshots/share.png" alt="share" style="width: 33%;">
 
 On first launch, enter the TubeArchivist instance base URL and an API token for an admin account. The app tests the token with the authenticated download-queue endpoint and stores the configuration encrypted with Android Keystore. HTTPS is preferred. HTTP is allowed for explicitly configured self-hosted instances, but is unencrypted and is warned about in the app.
 

@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -23,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -33,14 +36,15 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.Pair;
 import java.io.IOException
 import java.security.GeneralSecurityException
 
@@ -108,7 +112,11 @@ private fun TubeArchivistShareApp(
     )
 
     MaterialTheme(colorScheme = colorScheme) {
-        Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
+        ) {
             when (val currentConfig = configRead) {
                 is ConfigReadResult.Loaded -> {
                     if (showSettings) {
@@ -196,6 +204,7 @@ private fun SettingsScreen(
 ) {
     var baseUrl by remember(initialConfig) { mutableStateOf(initialConfig?.baseUrl.orEmpty()) }
     var apiToken by remember(initialConfig) { mutableStateOf(initialConfig?.apiToken.orEmpty()) }
+    var autoDownload by remember(initialConfig) { mutableStateOf(initialConfig?.autoDownload ?: true) }
     var status by remember { mutableStateOf<Pair<String, Boolean>?>(if (storageError != null) Pair(storageError, true) else null) }
     var busy by remember { mutableStateOf(false) }
 
@@ -227,6 +236,28 @@ private fun SettingsScreen(
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
         )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = autoDownload,
+                    onValueChange = { autoDownload = it },
+                    role = Role.Switch
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Switch(
+                checked = autoDownload,
+                onCheckedChange = null // Handled by the parent Row for a single touch target
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = "Auto download",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f)
+            )
+        }
         status?.let {
             if (it.second) {
                 WarningCard(it.first)
@@ -248,7 +279,7 @@ private fun SettingsScreen(
             Button(
                 enabled = !busy && baseUrl.isNotBlank() && apiToken.isNotBlank(),
                 onClick = {
-                    val config = InstanceConfig(baseUrl.trim().trimEnd('/'), apiToken.trim())
+                    val config = InstanceConfig(baseUrl, apiToken, autoDownload)
                     try {
                         api.validateConfig(config)
                         store.write(config)
@@ -269,7 +300,9 @@ private fun SettingsScreen(
             LaunchedEffect(baseUrl, apiToken) {
                 val result = withContext(Dispatchers.IO) {
                     try {
-                        api.testConnection(InstanceConfig(baseUrl, apiToken.trim()))
+                        val config = InstanceConfig(baseUrl, apiToken, autoDownload)
+                        api.validateConfig(config)
+                        api.testConnection(config)
                         Pair("Connection successful.", false)
                     } catch (error: ApiException) {
                         Pair(error.message ?: "Connection test failed.", true)

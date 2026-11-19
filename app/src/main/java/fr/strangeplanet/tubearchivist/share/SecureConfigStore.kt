@@ -26,6 +26,7 @@ class SecureConfigStore(context: Context) {
 
     fun read(): ConfigReadResult {
         val encrypted = preferences.getString(CONFIG_KEY, null) ?: return ConfigReadResult.Empty
+        val autoDownload = preferences.getBoolean(AUTODL_KEY, false)
         return try {
             val combined = decrypt(encrypted)
             val separator = combined.indexOf('\n')
@@ -36,6 +37,7 @@ class SecureConfigStore(context: Context) {
                     InstanceConfig(
                         baseUrl = combined.substring(0, separator),
                         apiToken = combined.substring(separator + 1),
+                        autoDownload = autoDownload
                     )
                 )
             }
@@ -51,17 +53,13 @@ class SecureConfigStore(context: Context) {
     @Throws(GeneralSecurityException::class, IOException::class)
     fun write(config: InstanceConfig) {
         val encrypted = encrypt("${config.baseUrl}\n${config.apiToken}")
-        if (!preferences.edit().putString(CONFIG_KEY, encrypted).commit()) {
+        val ok = preferences.edit()
+            .putString(CONFIG_KEY, encrypted)
+            .putBoolean(AUTODL_KEY, config.autoDownload)
+            .commit();
+        if (!ok) {
             throw IOException("Could not save the encrypted instance settings.")
         }
-    }
-
-    @Throws(GeneralSecurityException::class)
-    fun clear() {
-        if (!preferences.edit().remove(CONFIG_KEY).commit()) {
-            throw GeneralSecurityException("Could not clear the saved instance settings.")
-        }
-        keyStore.deleteEntry(KEY_ALIAS)
     }
 
     private fun encrypt(value: String): String {
@@ -105,6 +103,7 @@ class SecureConfigStore(context: Context) {
     private companion object {
         const val PREFERENCES_NAME = "instance_config"
         const val CONFIG_KEY = "encrypted_config"
+        const val AUTODL_KEY = "auto_download"
         const val KEY_ALIAS = "tube_archivist_api_token"
         const val ANDROID_KEY_STORE = "AndroidKeyStore"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
