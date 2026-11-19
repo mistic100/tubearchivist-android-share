@@ -1,6 +1,7 @@
 package fr.strangeplanet.tubearchivist.share
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,10 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
@@ -40,6 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -57,8 +61,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             TubeArchivistShareApp(
                 store = remember { SecureConfigStore(applicationContext) },
+                releaseChecker = remember { ReleaseChecker(applicationContext) },
                 incomingShare = sharedText,
                 onShareFinished = { finish() },
+                onOpenRelease = { url -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
             )
         }
     }
@@ -79,13 +85,21 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun TubeArchivistShareApp(
     store: SecureConfigStore,
+    releaseChecker: ReleaseChecker,
     incomingShare: String?,
     onShareFinished: () -> Unit,
+    onOpenRelease: (String) -> Unit,
 ) {
     val api = remember { TubeArchivistApi() }
     val initialRead = remember { store.read() }
     var configRead by remember { mutableStateOf(initialRead) }
     var showSettings by remember { mutableStateOf(initialRead !is ConfigReadResult.Loaded) }
+    var latestRelease by remember { mutableStateOf(releaseChecker.cachedRelease()) }
+    LaunchedEffect(releaseChecker) {
+        latestRelease = withContext(Dispatchers.IO) {
+            releaseChecker.checkIfDue()
+        }
+    }
     val background = colorResource(R.color.app_background)
     val highlight = colorResource(R.color.app_highlight)
     val accent = colorResource(R.color.app_accent)
@@ -135,12 +149,20 @@ private fun TubeArchivistShareApp(
                             sharedText = incomingShare,
                             config = currentConfig.config,
                             api = api,
+                            latestRelease = latestRelease?.takeIf {
+                                isNewerVersion(it.version, BuildConfig.VERSION_NAME)
+                            },
                             onDone = onShareFinished,
+                            onOpenRelease = onOpenRelease,
                         )
                     } else {
                         HomeScreen(
                             config = currentConfig.config,
-                            onSettings = { showSettings = true }
+                            onSettings = { showSettings = true },
+                            latestRelease = latestRelease?.takeIf {
+                                isNewerVersion(it.version, BuildConfig.VERSION_NAME)
+                            },
+                            onOpenRelease = onOpenRelease,
                         )
                     }
                 }
@@ -173,20 +195,33 @@ private fun TubeArchivistShareApp(
 @Composable
 private fun HomeScreen(
     config: InstanceConfig,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    latestRelease: ReleaseInfo?,
+    onOpenRelease: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.spacedBy(
+            space = 16.dp,
+            alignment = Alignment.CenterVertically
+        )
     ) {
         Text("TubeArchivist Share", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(12.dp))
         Text("Ready to receive a YouTube link from the Android share menu.")
-        Spacer(Modifier.height(24.dp))
-        Text("Connected to " + config.baseUrl)
-        Spacer(Modifier.height(24.dp))
+        Text(buildAnnotatedString {
+            append("Connected to ")
+            pushStyle(SpanStyle(
+                color = MaterialTheme.colorScheme.primary ,
+                textDecoration = TextDecoration.Underline
+            ))
+            append(config.baseUrl)
+            pop()
+        })
+        latestRelease?.let {
+            NewVersionCard(it, onOpenRelease)
+        }
         Button(onClick = onSettings) {
             Text("Instance settings")
         }
@@ -325,7 +360,9 @@ private fun ShareScreen(
     sharedText: String,
     config: InstanceConfig,
     api: TubeArchivistApi,
+    latestRelease: ReleaseInfo?,
     onDone: () -> Unit,
+    onOpenRelease: (String) -> Unit,
 ) {
     val parsed = remember(sharedText) { YouTubeLinkParser.parse(sharedText) }
     var confirmed by remember(sharedText) { mutableStateOf(false) }
@@ -403,6 +440,32 @@ private fun ShareScreen(
                 }
             }
         }
+
+        latestRelease?.let {
+            NewVersionCard(it, onOpenRelease)
+        }
+    }
+}
+
+@Composable
+private fun NewVersionCard(release: ReleaseInfo, onOpenRelease: (String) -> Unit) {
+    val message = buildAnnotatedString {
+        append("A new version is available: ${release.version}")
+        appendLine()
+        pushStyle(SpanStyle(
+            color = MaterialTheme.colorScheme.primary,
+            textDecoration = TextDecoration.Underline,
+        ))
+        append("Download it from Github")
+        pop()
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenRelease(release.url) },
+    ) {
+        Text(message, modifier = Modifier.padding(16.dp))
     }
 }
 
